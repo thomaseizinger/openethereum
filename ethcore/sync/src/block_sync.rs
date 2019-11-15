@@ -562,6 +562,8 @@ impl BlockDownloader {
 				},
 				Err(EthcoreError(EthcoreErrorKind::Import(ImportErrorKind::AlreadyQueued), _)) => {
 					trace_sync!(self, "Block already queued {:?}", h);
+					// Treat blocks in queue as imported in order not to start retraction too early
+					imported.insert(h.clone());
 					self.block_imported(&h, number, &parent);
 				},
 				Ok(_) => {
