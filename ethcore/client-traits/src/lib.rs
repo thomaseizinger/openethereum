@@ -398,8 +398,8 @@ pub trait BlockChainClient:
 	/// Schedule state-altering transaction to be executed on the next pending block.
 	fn transact_contract(&self, address: Address, data: Bytes) -> Result<(), transaction::Error>;
 
-	/// Process possible blocks with fork, this method will wait for its processing on block import mutex
-	fn process_fork(&self);
+	/// Returns true, if underlying import queue is processing possible fork at the moment
+	fn is_processing_fork(&self) -> bool;
 }
 
 /// resets the blockchain
