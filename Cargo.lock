@@ -456,6 +456,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bs58"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b170cd256a3f9fa6b9edae3e44a7dfdfc77e8124dbc3e2612d75f9c3e2396dae"
+
+[[package]]
 name = "bstr"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -590,6 +596,15 @@ dependencies = [
  "textwrap 0.11.0",
  "unicode-width",
  "vec_map",
+]
+
+[[package]]
+name = "clear_on_drop"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97276801e127ffb46b66ce23f35cc96bd454fa311294bced4bbace7baa8b1d17"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -937,6 +952,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "curve25519-dalek"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26778518a7f6cffa1d25a44b602b62b979bd88adb9e99ffec546998cf3404839"
+dependencies = [
+ "byteorder",
+ "digest",
+ "rand_core 0.5.1",
+ "subtle 2.2.2",
+ "zeroize",
+]
+
+[[package]]
 name = "derive_more"
 version = "0.99.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -983,6 +1011,18 @@ dependencies = [
  "serde",
  "serde_derive",
  "strsim 0.7.0",
+]
+
+[[package]]
+name = "ed25519-dalek"
+version = "1.0.0-pre.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978710b352437433c97b2bff193f2fb1dfd58a093f863dd95e225a19baa599a2"
+dependencies = [
+ "clear_on_drop",
+ "curve25519-dalek",
+ "rand 0.7.2",
+ "sha2",
 ]
 
 [[package]]
@@ -1052,6 +1092,24 @@ dependencies = [
  "parity-bytes",
  "parity-crypto",
  "vm",
+]
+
+[[package]]
+name = "enr"
+version = "0.1.0-alpha-1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43184e030b34fb9e8b8ec5a182183855bcf2e07c90f7965ce5a289dcbf9e48ae"
+dependencies = [
+ "base64 0.10.1",
+ "bs58",
+ "clap",
+ "ed25519-dalek",
+ "hex",
+ "libsecp256k1",
+ "log",
+ "rand 0.7.2",
+ "rlp",
+ "sha3",
 ]
 
 [[package]]
@@ -1490,6 +1548,7 @@ dependencies = [
  "ansi_term",
  "assert_matches",
  "bytes",
+ "enr",
  "env_logger 0.5.13",
  "ethcore-io",
  "ethcore-network",
@@ -1499,6 +1558,7 @@ dependencies = [
  "ipnetwork",
  "keccak-hash",
  "libc",
+ "libsecp256k1",
  "log",
  "lru-cache",
  "mio",
@@ -2109,6 +2169,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "644f9158b2f133fd50f5fb3242878846d9eb792e445c893805ff0e3824006e35"
+
+[[package]]
 name = "hex-literal"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2129,12 +2195,23 @@ dependencies = [
 
 [[package]]
 name = "hmac"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f127a908633569f208325f86f71255d3363c79721d7f9fe31cd5569908819771"
+checksum = "5dcb5e64cda4c23119ab41ba960d1e170a774c8e4b9d9e6a9bc18aabf5e59695"
 dependencies = [
  "crypto-mac",
  "digest",
+]
+
+[[package]]
+name = "hmac-drbg"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6e570451493f10f6581b48cdd530413b63ea9e780f544bfd3bdcaa0d89d1a7b"
+dependencies = [
+ "digest",
+ "generic-array",
+ "hmac",
 ]
 
 [[package]]
@@ -2518,6 +2595,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "keccak"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67c21572b4949434e4fc1e1978b99c5f77064153c59d998bf13ecd96fb5ecba7"
+
+[[package]]
 name = "keccak-hash"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2655,8 +2738,11 @@ dependencies = [
  "arrayref",
  "crunchy 0.2.2",
  "digest",
+ "hmac-drbg",
  "rand 0.7.2",
+ "sha2",
  "subtle 2.2.2",
+ "typenum",
 ]
 
 [[package]]
@@ -4547,6 +4633,19 @@ dependencies = [
  "block-buffer",
  "digest",
  "fake-simd",
+ "opaque-debug",
+]
+
+[[package]]
+name = "sha3"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd26bc0e7a2e3a7c959bc494caf58b72ee0c71d67704e9520f736ca7e4853ecf"
+dependencies = [
+ "block-buffer",
+ "byte-tools",
+ "digest",
+ "keccak",
  "opaque-debug",
 ]
 

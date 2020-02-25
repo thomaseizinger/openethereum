@@ -111,6 +111,14 @@ impl NodeEndpoint {
 		self.to_rlp(rlp);
 	}
 
+	pub fn to_enr(&self, key: &parity_crypto::publickey::Secret) -> enr::Enr {
+		let mut builder = enr::EnrBuilder::new("v4");
+		builder.ip(self.address.ip());
+		builder.tcp(self.address.port());
+		builder.udp(self.udp_port);
+		builder.build(&enr::DefaultKey::Secp256k1(secp256k1::SecretKey::parse_slice((*key).as_bytes()).expect("rust-secp256k1 keychain is always valid; qed"))).expect("ENR always correct; qed")
+	}
+
 	/// Validates that the tcp port is not 0 and that the node is a valid discovery node (i.e. `is_valid_discovery_node()` is true).
 	/// Sync happens over tcp.
 	pub fn is_valid_sync_node(&self) -> bool {

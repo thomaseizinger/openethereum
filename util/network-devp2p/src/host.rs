@@ -26,6 +26,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::time::Duration;
 
+use enr::{Enr, EnrKey, EnrPublicKey};
 use ethereum_types::H256;
 use keccak_hash::keccak;
 use log::{debug, info, trace, warn};
@@ -214,10 +215,48 @@ impl<'s> NetworkContextTrait for NetworkContext<'s> {
 	}
 }
 
+struct WrappedEnr {
+	inner: enr::Enr,
+	key: enr::DefaultKey,
+	save_cb: Box<dyn Fn(&enr::Enr) + Send + Sync>,
+}
+
+impl Deref for WrappedEnr {
+	type Target = enr::Enr;
+
+	fn deref(&self) -> &Self::Target {
+		&self.inner
+	}
+}
+
+impl WrappedEnr {
+	fn edit(&mut self) -> EnrGuard {
+		EnrGuard {
+			inner: &mut self.inner,
+			key: &self.key,
+			save_cb: &*self.save_cb,
+		}
+	}
+}
+
+struct EnrGuard<'a> {
+	inner: &'a mut enr::Enr,
+	key: &'a enr::DefaultKey,
+	save_cb: &'a (dyn Fn(&enr::Enr) + Send + Sync),
+}
+
+impl<'a> Drop for EnrGuard<'a> {
+	fn drop(&mut self) {
+		(self.save_cb)(&self.inner)
+	}
+}
+
 /// Shared host information
 pub struct HostInfo {
 	/// Our private and public keys.
 	keys: KeyPair,
+	/// Ethereum Node Record.
+	enr: WrappedEnr,
 	/// Current network configuration
 	config: NetworkConfiguration,
 	/// Connection nonce.
@@ -288,11 +327,11 @@ impl Host {
 		let keys = if let Some(ref secret) = config.use_secret {
 			KeyPair::from_secret(secret.clone())?
 		} else {
-			config.config_path.clone().and_then(|ref p| load_key(Path::new(&p)))
+			config.config_path.clone().and_then(|ref p| load::<Secret>(Path::new(&p)))
 				.map_or_else(|| {
 				let key = Random.generate();
 				if let Some(path) = config.config_path.clone() {
-					save_key(Path::new(&path), key.secret());
+					save(Path::new(&path), key.secret());
 				}
 				key
 			},
@@ -305,6 +344,34 @@ impl Host {
 		debug!(target: "network", "Listening at {:?}", listen_address);
 		let udp_port = config.udp_port.unwrap_or_else(|| listen_address.port());
 		let local_endpoint = NodeEndpoint { address: listen_address, udp_port };
+		let enr_key = enr::DefaultKey::Secp256k1(secp256k1::SecretKey::parse_slice((**keys.secret()).as_bytes()).expect("rust-secp256k1 keychain is always valid; qed"));
+		let enr = config.config_path.as_ref().and_then(|p| load::<Enr>(Path::new(&p))).filter(|enr| {
+			if enr.public_key().encode() != enr_key.public().encode() {
+				warn!("ENR's public key does not match");
+				return false;
+			}
+
+			if !enr.verify() {
+				warn!("ENR signature is invalid");
+				return false;
+			}
+
+			true
+		}).unwrap_or_else(|| {
+			local_endpoint.to_enr(keys.secret())
+		});
+		let mut enr = WrappedEnr {
+			inner: enr,
+			key: enr_key,
+			save_cb: {
+				if let Some(path) = config.config_path.clone() {
+					Box::new(move |enr| save(&Path::new(&path), enr))
+				} else {
+					Box::new(move |_| ())
+				}
+			},
+		};
+		drop(enr.edit());
 
 		let boot_nodes = config.boot_nodes.clone();
 		let reserved_nodes = config.reserved_nodes.clone();
@@ -313,6 +380,7 @@ impl Host {
 		let mut host = Host {
 			info: RwLock::new(HostInfo {
 				keys,
+				enr,
 				config,
 				nonce: H256::random(),
 				protocol_version: PROTOCOL_VERSION,
@@ -475,7 +543,17 @@ impl Host {
 			Some(addr) => NodeEndpoint { address: addr, udp_port: local_endpoint.udp_port }
 		};
 
-		self.info.write().public_endpoint = Some(public_endpoint.clone());
+		(|| {
+			let mut info = self.info.write();
+			info.public_endpoint = Some(public_endpoint.clone());
+			let g = info.enr.edit();
+			if let Some(sock) = g.inner.tcp_socket() {
+				if sock == public_endpoint.address {
+					return;
+				}
+			}
+			let _ = g.inner.set_tcp_socket(public_endpoint.address, &g.key);
+		})();
 
 		if let Some(url) = self.external_url() {
 			io.message(NetworkIoMessage::NetworkStarted(url)).unwrap_or_else(|e| warn!("Error sending IO notification: {:?}", e));
@@ -485,7 +563,9 @@ impl Host {
 		let discovery = {
 			let info = self.info.read();
 			if info.config.discovery_enabled && info.config.non_reserved_mode == NonReservedPeerMode::Accept {
-				Some(Discovery::new(&info.keys, public_endpoint, allow_ips))
+				// enr::Enr is !Clone
+				let node_record = (*info.enr).to_string().parse().expect("involution; qed");
+				Some(Discovery::new(&info.keys, public_endpoint, node_record, allow_ips))
 			} else { None }
 		};
 
@@ -1218,36 +1298,70 @@ impl IoHandler<NetworkIoMessage> for Host {
 	}
 }
 
-fn save_key(path: &Path, key: &Secret) {
+trait DiskEntity: FromStr {
+	fn path() -> &'static str;
+	fn desc() -> &'static str;
+	fn to_repr(&self) -> String;
+}
+
+impl DiskEntity for Secret {
+	fn path() -> &'static str {
+		"key"
+	}
+	fn desc() -> &'static str {
+		"key file"
+	}
+	fn to_repr(&self) -> String {
+		self.to_hex()
+	}
+}
+
+impl DiskEntity for Enr {
+	fn path() -> &'static str {
+		"enr"
+	}
+	fn desc() -> &'static str {
+		"Ethereum Node Record"
+	}
+	fn to_repr(&self) -> String {
+		self.to_string()
+	}
+}
+
+fn save<E: DiskEntity>(path: &Path, entity: &E) {
 	let mut path_buf = PathBuf::from(path);
 	if let Err(e) = fs::create_dir_all(path_buf.as_path()) {
-		warn!("Error creating key directory: {:?}", e);
+		warn!("Error creating {} directory: {:?}", E::desc(), e);
 		return;
 	};
-	path_buf.push("key");
+	path_buf.push(E::path());
 	let path = path_buf.as_path();
 	let mut file = match fs::File::create(&path) {
 		Ok(file) => file,
 		Err(e) => {
-			warn!("Error creating key file: {:?}", e);
+			warn!("Error creating {}: {:?}", E::desc(), e);
 			return;
 		}
 	};
 	if let Err(e) = restrict_permissions_owner(path, true, false) {
 		warn!(target: "network", "Failed to modify permissions of the file ({})", e);
 	}
-	if let Err(e) = file.write(&key.to_hex().into_bytes()) {
-		warn!("Error writing key file: {:?}", e);
+	if let Err(e) = file.write(&entity.to_repr().into_bytes()) {
+		warn!("Error writing {}: {:?}", E::desc(), e);
 	}
 }
 
-fn load_key(path: &Path) -> Option<Secret> {
+fn load<E>(path: &Path) -> Option<E>
+where
+	E: DiskEntity,
+	<E as std::str::FromStr>::Err: std::fmt::Debug,
+{
 	let mut path_buf = PathBuf::from(path);
-	path_buf.push("key");
+	path_buf.push(E::path());
 	let mut file = match fs::File::open(path_buf.as_path()) {
 		Ok(file) => file,
 		Err(e) => {
-			debug!("Error opening key file: {:?}", e);
+			debug!("Error opening {}: {:?}", E::desc(), e);
 			return None;
 		}
 	};
@@ -1255,14 +1369,14 @@ fn load_key(path: &Path) -> Option<Secret> {
 	match file.read_to_string(&mut buf) {
 		Ok(_) => {},
 		Err(e) => {
-			warn!("Error reading key file: {:?}", e);
+			warn!("Error reading {}: {:?}", E::desc(), e);
 			return None;
 		}
 	}
-	match Secret::from_str(&buf) {
+	match E::from_str(&buf) {
 		Ok(key) => Some(key),
 		Err(e) => {
-			warn!("Error parsing key file: {:?}", e);
+			warn!("Error parsing {}: {:?}", E::desc(), e);
 			None
 		}
 	}
@@ -1273,9 +1387,9 @@ fn key_save_load() {
 	use tempdir::TempDir;
 
 	let tempdir = TempDir::new("").unwrap();
-	let key = H256::random().into();
-	save_key(tempdir.path(), &key);
-	let r = load_key(tempdir.path());
+	let key = Secret::from(H256::random());
+	save(tempdir.path(), &key);
+	let r = load(tempdir.path());
 	assert_eq!(key, r.unwrap());
 }
 
