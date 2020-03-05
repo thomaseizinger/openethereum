@@ -564,7 +564,7 @@ impl Host {
 			let info = self.info.read();
 			if info.config.discovery_enabled && info.config.non_reserved_mode == NonReservedPeerMode::Accept {
 				// enr::Enr is !Clone
-				let node_record = (*info.enr).to_base64().parse().expect("involution; qed");
+				let node_record = (*info.enr).to_base64().parse().expect("serialize and deserialize back, this should never fail");
 				Some(Discovery::new(&info.keys, public_endpoint, node_record, allow_ips))
 			} else { None }
 		};
