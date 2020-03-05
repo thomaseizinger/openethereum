@@ -782,7 +782,7 @@ impl<'a> Discovery<'a> {
 		self.check_timestamp(timestamp)?;
 
 		let node = NodeEntry {
-			id: node_id.clone(),
+			id: *node_id,
 			endpoint: NodeEndpoint {
 				address: *from,
 				udp_port: from.port()
