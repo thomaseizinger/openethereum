@@ -1299,30 +1299,25 @@ impl IoHandler<NetworkIoMessage> for Host {
 }
 
 trait DiskEntity: FromStr {
-	fn path() -> &'static str;
-	fn desc() -> &'static str;
+	const PATH: &'static str;
+	const DESC: &'static str;
+
 	fn to_repr(&self) -> String;
 }
 
 impl DiskEntity for Secret {
-	fn path() -> &'static str {
-		"key"
-	}
-	fn desc() -> &'static str {
-		"key file"
-	}
+	const PATH: &'static str = "key";
+	const DESC: &'static str = "key file";
+
 	fn to_repr(&self) -> String {
 		self.to_hex()
 	}
 }
 
 impl DiskEntity for Enr {
-	fn path() -> &'static str {
-		"enr"
-	}
-	fn desc() -> &'static str {
-		"Ethereum Node Record"
-	}
+	const PATH: &'static str = "enr";
+	const DESC: &'static str = "Ethereum Node Record";
+
 	fn to_repr(&self) -> String {
 		self.to_base64()
 	}
@@ -1331,15 +1326,15 @@ impl DiskEntity for Enr {
 fn save<E: DiskEntity>(path: &Path, entity: &E) {
 	let mut path_buf = PathBuf::from(path);
 	if let Err(e) = fs::create_dir_all(path_buf.as_path()) {
-		warn!("Error creating {} directory: {:?}", E::desc(), e);
+		warn!("Error creating {} directory: {:?}", E::DESC, e);
 		return;
 	};
-	path_buf.push(E::path());
+	path_buf.push(E::PATH);
 	let path = path_buf.as_path();
 	let mut file = match fs::File::create(&path) {
 		Ok(file) => file,
 		Err(e) => {
-			warn!("Error creating {}: {:?}", E::desc(), e);
+			warn!("Error creating {}: {:?}", E::DESC, e);
 			return;
 		}
 	};
@@ -1347,7 +1342,7 @@ fn save<E: DiskEntity>(path: &Path, entity: &E) {
 		warn!(target: "network", "Failed to modify permissions of the file ({})", e);
 	}
 	if let Err(e) = file.write(&entity.to_repr().into_bytes()) {
-		warn!("Error writing {}: {:?}", E::desc(), e);
+		warn!("Error writing {}: {:?}", E::DESC, e);
 	}
 }
 
@@ -1357,11 +1352,11 @@ where
 	<E as std::str::FromStr>::Err: std::fmt::Debug,
 {
 	let mut path_buf = PathBuf::from(path);
-	path_buf.push(E::path());
+	path_buf.push(E::PATH);
 	let mut file = match fs::File::open(path_buf.as_path()) {
 		Ok(file) => file,
 		Err(e) => {
-			debug!("Error opening {}: {:?}", E::desc(), e);
+			debug!("Error opening {}: {:?}", E::DESC, e);
 			return None;
 		}
 	};
@@ -1369,14 +1364,14 @@ where
 	match file.read_to_string(&mut buf) {
 		Ok(_) => {},
 		Err(e) => {
-			warn!("Error reading {}: {:?}", E::desc(), e);
+			warn!("Error reading {}: {:?}", E::DESC, e);
 			return None;
 		}
 	}
 	match E::from_str(&buf) {
 		Ok(key) => Some(key),
 		Err(e) => {
-			warn!("Error parsing {}: {:?}", E::desc(), e);
+			warn!("Error parsing {}: {:?}", E::DESC, e);
 			None
 		}
 	}
